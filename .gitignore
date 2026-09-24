@@ -1,0 +1,17 @@
+# data (too big for GitHub)
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+models/*
+!models/.gitkeep
+*.csv
+*.parquet
+
+# python / jupyter
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# scratch
+test.ipynb
+read.py
