@@ -1,11 +1,6 @@
-# data (too big for GitHub)
-data/raw/*
-data/processed/*
-!data/**/.gitkeep
-models/*
-!models/.gitkeep
-*.csv
-*.parquet
+# data, parquet, saved models (too big for GitHub)
+data/*
+!data/.gitkeep
 
 # python / jupyter
 .venv/
@@ -15,3 +10,4 @@ __pycache__/
 # scratch
 test.ipynb
 read.py
+install.log

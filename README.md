@@ -21,7 +21,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Put `US_Accidents_March23_sampled_500k.csv` in `data/raw/` (not in git — too big). Select the `.venv` kernel in Jupyter / VS Code.
+Put `US_Accidents_March23_sampled_500k.csv` in `data/` (not in git — too big). Select the `.venv` kernel in Jupyter / VS Code.
 
 ## How to use this file
 
@@ -55,13 +55,12 @@ or copy the prompt block directly.
 ```
 Phase 1: Set up the project in this folder.
 - Create the folder structure:
-    data/raw/  (move US_Accidents_March23_sampled_500k.csv here)
-    data/processed/
+    data/       (CSV + all parquet/model files, not pushed to GitHub)
     notebooks/  (01_load_and_sample, 02_cleaning, 03_eda, 04_features, 05_modelling, 06_evaluation .ipynb)
-    reports/figures/
+    reports/    (figures + markdown write-ups)
 - Write requirements.txt: pandas numpy pyarrow matplotlib seaborn folium scikit-learn
   imbalanced-learn lightgbm xgboost shap.
-- Write .gitignore excluding data/raw/ and large data files.
+- Write .gitignore excluding data/ contents.
 - git init. Use random seed 42 everywhere.
 - Check Python 3.10+ is available and install requirements.
 Output: working environment + folder structure. Tick Phase 1 in README Progress.
@@ -71,14 +70,14 @@ Output: working environment + folder structure. Tick Phase 1 in README Progress.
 
 ```
 Phase 2: In notebooks/01_load_and_sample.ipynb:
-- Load data/raw/US_Accidents_March23_sampled_500k.csv (already a ~500K sample of the
+- Load data/US_Accidents_March23_sampled_500k.csv (already a ~500K sample of the
   7.7M-row full dataset, so no chunked sampling needed).
 - Print shape, dtypes, Severity counts and shares, rows per year, rows per state.
 - Compare Severity shares to the known full-data shares (~80% class 2, ~2.6% class 4)
   and note whether the sample looks representative.
-- Save as data/processed/sample.parquet.
+- Save as data/sample.parquet.
 - Record the class counts in a markdown cell (they get quoted in the report).
-Output: data/processed/sample.parquet, class shares checked.
+Output: data/sample.parquet, class shares checked.
 ```
 
 ## Phase 3 — Leakage audit and column selection
@@ -122,13 +121,13 @@ Keep a cleaning log: rows and columns before/after every step -> reports/cleanin
   16 compass points + CALM + VAR.
 - Weather_Condition (100+ labels) -> ~8 groups: Clear, Cloudy, Rain,
   Heavy rain/Thunderstorm, Snow/Ice, Fog/Haze/Smoke, Windy, Other.
-Output: data/processed/clean.parquet + cleaning log.
+Output: data/clean.parquet + cleaning log.
 ```
 
 ## Phase 5 — Exploratory data analysis
 
 ```
-Phase 5: In notebooks/03_eda.ipynb, make 10–15 charts saved to reports/figures/.
+Phase 5: In notebooks/03_eda.ipynb, make 10–15 charts saved to reports/.
 Each chart: title, axis labels, units, and a 1–2 sentence insight in a markdown cell.
 Answer:
 1. How imbalanced is Severity? (bar: counts + %)
@@ -163,7 +162,7 @@ Phase 6: In notebooks/04_features.ipynb, build features from clean.parquet:
 - location_cluster: KMeans(~50, random_state=42) on Start_Lat/Start_Lng (fit on train only)
 All fitted encoders/imputers/scalers go in a sklearn Pipeline + ColumnTransformer.
 Scaling only for Logistic Regression.
-Save data/processed/features.parquet and a data dictionary (reports/data_dictionary.md).
+Save data/features.parquet and a data dictionary (reports/data_dictionary.md).
 Output: model-ready feature table + data dictionary.
 ```
 
@@ -173,7 +172,7 @@ Output: model-ready feature table + data dictionary.
 Phase 7: Split features.parquet BEFORE fitting any imputation/encoding/resampling/scaling.
 - Main split: stratified on Severity, 70% train / 15% val / 15% test, random_state=42.
 - Time-based robustness set: train on 2016–2021, test on 2022–2023.
-- Save all splits to data/processed/ (train/val/test + time_train/time_test parquet).
+- Save all splits to data/ (train/val/test + time_train/time_test parquet).
 - Print class shares per split to confirm stratification.
 Rules: val for every choice (imbalance method, model, hyperparams). Test used ONCE at the end.
 Output: fixed splits on disk.
@@ -211,7 +210,7 @@ Tune the best model with RandomizedSearchCV(3-fold StratifiedKFold, scoring="f1_
 on a 100–200K train subsample. LightGBM params: num_leaves, learning_rate, n_estimators,
 min_child_samples, subsample, colsample_bytree. n_jobs=-1, random_state=42.
 Ablation: best model with vs without Source, report the difference.
-Save the tuned model (joblib) to models/.
+Save the tuned model (joblib) to data/.
 Output: trained models, tuned best model, training times.
 ```
 
@@ -226,7 +225,7 @@ Phase 10: In notebooks/06_evaluation.ipynb, evaluate on the TEST set (once):
 - Normalised confusion matrix (expect 1↔2 and 3↔4 confusion).
 - Error analysis: where the model fails by State, hour, weather group, Source.
 - Time-based check: train on 2016–2021, test on 2022–2023; compare with random split, explain drop.
-Save figures to reports/figures/ and table to reports/results.md.
+Save figures to reports/ and table to reports/results.md.
 Output: comparison table, confusion matrix, error analysis.
 ```
 
@@ -240,7 +239,7 @@ Phase 11: Explain the best model.
   (e.g. "highway accidents at rush hour are X times more likely to be Severity 4").
 - Limitations paragraph: severity = traffic impact not injury; providers (Source) may
   record severity differently; sampled data; data ends March 2023; coverage varies by state.
-Save plots to reports/figures/ and text to reports/interpretation.md.
+Save plots to reports/ and text to reports/interpretation.md.
 Output: importance plots, key insights, limitations.
 ```
 
