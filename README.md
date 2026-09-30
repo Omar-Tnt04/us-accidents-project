@@ -40,8 +40,8 @@ or copy the prompt block directly.
 - [ ] Phase 3 — Leakage audit
 - [ ] Phase 4 — Cleaning
 - [ ] Phase 5 — EDA
-- [ ] Phase 6 — Feature engineering
-- [ ] Phase 7 — Splits
+- [ ] Phase 6 — Splits
+- [ ] Phase 7 — Feature engineering
 - [ ] Phase 8 — Class imbalance
 - [ ] Phase 9 — Modelling & tuning
 - [ ] Phase 10 — Evaluation
@@ -90,7 +90,7 @@ Apply these decisions:
   ID (identifier); Country (constant "US"); Weather_Timestamp, Timezone, Airport_Code
   (redundant); Turning_Loop if nunique() == 1.
 - KEEP for analysis: Source (ablation later in Phase 9).
-- KEEP with care: City, County, Zipcode, Street (high cardinality — no one-hot, encode in Phase 6).
+- KEEP with care: City, County, Zipcode, Street (high cardinality — no one-hot, encode in Phase 7).
 - KEEP: all weather, road-feature, light and time columns.
 Verify each decision with actual data (nunique, examples). Save the kept/dropped table
 with reasons to reports/leakage_audit.md. Put the code at the top of 02_cleaning.ipynb.
@@ -106,6 +106,9 @@ Keep a cleaning log: rows and columns before/after every step -> reports/cleanin
 - pd.to_datetime(df["Start_Time"], format="mixed").
 - Road-feature True/False columns -> 0/1.
 - Drop exact duplicates, log count.
+- Drop near-duplicates: the same accident reported by two providers (Source).
+  Key = Start_Time rounded to 5 min + Start_Lat/Start_Lng rounded to 3 decimals (~100 m).
+  Keep the first, log count. Otherwise copies land in both train and test and inflate scores.
 4.2 Missing values (measure first: df.isna().mean().sort_values()):
 - Columns > 40% missing: drop.
 - Wind_Chill(F): drop (mostly missing, ~copy of Temperature).
@@ -139,15 +142,30 @@ Answer:
 6. Do road features matter? (% Severity 3–4 near Junction, Traffic_Signal, Crossing, Stop)
 7. Day or night? (Severity share by Sunrise_Sunset)
 8. Numeric correlations (heat map)
-9. Stable over time? (Severity share by year and by Source — drift/reporting differences)
+9. Stable over time? (Severity share by year and by Source — drift/reporting differences).
+   Check where Severity 1 comes from: if it clusters in one Source/period, say so.
 Drop any chart without an insight. Summarise key findings at the end of the notebook.
 Output: figures + written insights.
 ```
 
-## Phase 6 — Feature engineering
+## Phase 6 — Train / validation / test split
 
 ```
-Phase 6: In notebooks/04_features.ipynb, build features from clean.parquet:
+Phase 6: At the top of notebooks/04_features.ipynb, split clean.parquet BEFORE any
+feature is fitted (encoding, clustering, imputation, resampling, scaling).
+- Main split: stratified on Severity, 70% train / 15% val / 15% test, random_state=42.
+- Time-based robustness set: train on 2016–2021, test on 2022–2023.
+- Save all splits to data/ (train/val/test + time_train/time_test parquet).
+- Print class shares per split to confirm stratification.
+Rules: val for every choice (imbalance method, model, hyperparams). Test used ONCE at the end.
+Output: fixed splits on disk.
+```
+
+## Phase 7 — Feature engineering
+
+```
+Phase 7: In notebooks/04_features.ipynb, add features to each split from Phase 6.
+Stateless row-by-row features (one function, applied identically to every split):
 - hour, weekday, month, year from Start_Time
 - is_weekend (weekday >= 5)
 - is_rush_hour (weekday and hour in 7–9 or 16–19)
@@ -156,26 +174,15 @@ Phase 6: In notebooks/04_features.ipynb, build features from clean.parquet:
 - weather_group + bad_weather flag (rain, snow, fog, storm)
 - road_feature_count (sum of road-feature flags)
 - is_highway (Street contains "I-", "Interstate", "Hwy", "Highway", "US-", "Fwy")
-- State: one-hot (in the Pipeline)
-- City, County: frequency encoding (compute counts on TRAIN only — do it after the Phase 7 split
-  or inside the pipeline)
-- location_cluster: KMeans(~50, random_state=42) on Start_Lat/Start_Lng (fit on train only)
-All fitted encoders/imputers/scalers go in a sklearn Pipeline + ColumnTransformer.
-Scaling only for Logistic Regression.
-Save data/features.parquet and a data dictionary (reports/data_dictionary.md).
-Output: model-ready feature table + data dictionary.
-```
-
-## Phase 7 — Train / validation / test split
-
-```
-Phase 7: Split features.parquet BEFORE fitting any imputation/encoding/resampling/scaling.
-- Main split: stratified on Severity, 70% train / 15% val / 15% test, random_state=42.
-- Time-based robustness set: train on 2016–2021, test on 2022–2023.
-- Save all splits to data/ (train/val/test + time_train/time_test parquet).
-- Print class shares per split to confirm stratification.
-Rules: val for every choice (imbalance method, model, hyperparams). Test used ONCE at the end.
-Output: fixed splits on disk.
+Fitted features — inside the sklearn Pipeline + ColumnTransformer, fit on train only:
+- State: one-hot
+- City, County: frequency encoding (counts from train)
+- location_cluster: KMeans(~50, random_state=42) on Start_Lat/Start_Lng
+- median imputer; scaler (Logistic Regression only)
+Caveat: `year` must be dropped for the time-based run — trees treat unseen years
+(2022–23) as the last seen year (2021), so it carries no signal there.
+Save the featured splits to data/ and a data dictionary (reports/data_dictionary.md).
+Output: model-ready splits + data dictionary.
 ```
 
 ## Phase 8 — Handling class imbalance
@@ -185,9 +192,11 @@ Phase 8: In notebooks/05_modelling.ipynb, compare at least two imbalance strateg
 the validation set using macro F1 (with one fixed model, e.g. LightGBM or LogReg):
 - class_weight="balanced" (start here)
 - Random undersampling of Severity 2 (train set only)
-- SMOTE (imbalanced-learn, train set only, after split; never on val/test) — use a
-  subsample if slow
-- Decision-threshold tuning of class probabilities on validation
+- SMOTENC (imbalanced-learn; plain SMOTE interpolates one-hot columns, which is
+  meaningless) — train set only, on a 100K subsample; never on val/test. Skip if too slow.
+- Decision-threshold tuning: multiply each class probability by a weight w_k, pick the
+  weights on val to maximise macro F1 (e.g. coordinate search over a grid), predict
+  argmax(w_k * p_k). Freeze the weights and apply them unchanged on test.
 Report a table: strategy vs macro F1, per-class recall. Pick and justify one.
 Optional fallback: binary target high impact (3–4) vs low (1–2).
 Output: chosen strategy with justification.
@@ -210,6 +219,8 @@ Tune the best model with RandomizedSearchCV(3-fold StratifiedKFold, scoring="f1_
 on a 100–200K train subsample. LightGBM params: num_leaves, learning_rate, n_estimators,
 min_child_samples, subsample, colsample_bytree. n_jobs=-1, random_state=42.
 Ablation: best model with vs without Source, report the difference.
+Single-Source run: retrain the best model on the largest Source only (train + val
+filtered), report macro F1. Shows how much the model learns reporting practice vs road/weather.
 Save the tuned model (joblib) to data/.
 Output: trained models, tuned best model, training times.
 ```
@@ -219,12 +230,18 @@ Output: trained models, tuned best model, training times.
 ```
 Phase 10: In notebooks/06_evaluation.ipynb, evaluate on the TEST set (once):
 - Macro F1 (main), classification_report (per-class P/R/F1), balanced accuracy,
-  weighted F1, OvR ROC-AUC, accuracy (explain why it misleads: all-2 gives ~80%).
+  weighted F1, OvR ROC-AUC, PR-AUC for Severity 4 (better than ROC-AUC for a rare class),
+  accuracy (explain why it misleads: all-2 gives ~80%).
+- Also report macro F1 over classes 2–4 only as a side number (Severity 1 is <1% of rows
+  and drags macro F1 down).
 - Fill the results table: Model | Macro F1 | Balanced acc | Recall Sev 4 | ROC-AUC OvR | Train time
   (Dummy row: ≈0.22 | 0.25 | 0.00 | 0.50 | —). Include val and test.
 - Normalised confusion matrix (expect 1↔2 and 3↔4 confusion).
 - Error analysis: where the model fails by State, hour, weather group, Source.
-- Time-based check: train on 2016–2021, test on 2022–2023; compare with random split, explain drop.
+- Time-based check: train on 2016–2021, test on 2022–2023 (without `year`); compare with
+  random split, explain drop.
+- (optional) Spatial check: GroupKFold / group split by County or location_cluster, so
+  test locations are unseen. Compare with the random split to measure location memorisation.
 Save figures to reports/ and table to reports/results.md.
 Output: comparison table, confusion matrix, error analysis.
 ```
@@ -281,12 +298,12 @@ Output: report PDF, slides, clean repo.
 
 | Risk | Mitigation |
 |---|---|
-| Leakage inflates scores | Phase 3 audit; pipelines fit on train only |
+| Leakage inflates scores | Phase 3 audit; near-duplicate removal; split before fitting features |
 | Imbalance hides minority performance | Macro F1, per-class recall, class weights |
-| Source bias | EDA by Source; ablation with/without Source |
-| Drift over years | Time-based test (Phase 7) |
+| Source bias | EDA by Source; ablation with/without Source; single-Source run |
+| Drift over years | Time-based test (Phase 6) |
 | Slow training/tuning | Tune on subsample, LightGBM, `n_jobs=-1` |
-| Schedule slips | Freeze scope after Phase 7; binary-target fallback |
+| Schedule slips | Freeze scope after Phase 6; binary-target fallback |
 
 ## References
 
