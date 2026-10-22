@@ -4,9 +4,11 @@ pyarrow
 matplotlib
 seaborn
 folium
+scipy
 scikit-learn
 imbalanced-learn
 lightgbm
-xgboost
+xgboost-cpu
 shap
 ipykernel
+nbclient
