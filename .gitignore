@@ -3,3 +3,4 @@ __pycache__/
 # only the final report PDF is versioned
 *.pdf
 !reports/midterm_report.pdf
+US_Accidents_March23_sampled_500k.csv
