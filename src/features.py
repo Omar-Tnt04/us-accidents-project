@@ -51,6 +51,22 @@ DROP = {
 NUM = [c for c in NUM_ALL if c not in DROP]
 FEATURES = [c for c in CANDIDATES if c not in DROP]
 
+# Ablation feature sets (report Section 5.6): set -> (name, inputs removed from FEATURES)
+LOCATION = ["Start_Lat", "Start_Lng", "State", "City", "County"]
+ABLATION_SETS = {
+    "A": ("Full set", []),
+    "B": ("Without provider", ["Source"]),
+    "C": ("Without provider and year", ["Source", "year"]),
+    "D": ("Without location", LOCATION),
+    "E": ("Context only: time, light, weather, road", LOCATION + ["Source", "year"]),
+}
+
+
+def ablation_features(key):
+    """Input columns of ablation set `key` ("A".."E")."""
+    removed = set(ABLATION_SETS[key][1])
+    return [c for c in FEATURES if c not in removed]
+
 
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """clean.parquet -> all candidate features + target (selection to FEATURES happens in notebook 04)."""
@@ -114,15 +130,20 @@ class KMeansCluster(BaseEstimator, TransformerMixin):
         return np.array(["location_cluster"], dtype=object)
 
 
-def make_preprocessor(scale=False, use_source=True, n_clusters=50):
+def make_preprocessor(scale=False, use_source=True, n_clusters=50, drop=()):
     """ColumnTransformer for all models. scale=True only for Logistic Regression.
-    use_source=False drops `Source` (Phase 9 ablation)."""
+    use_source=False drops `Source`; drop=ABLATION_SETS[k][1] builds ablation set k.
+    The location clusters are only built when both Start_Lat and Start_Lng are kept."""
+    drop = set(drop) | (set() if use_source else {"Source"})
     num = [SimpleImputer(strategy="median")] + ([StandardScaler()] if scale else [])
-    cat = [c for c in CAT if use_source or c != "Source"]
     onehot = dict(handle_unknown="ignore", sparse_output=False, dtype=np.float32)
-    return ColumnTransformer([
-        ("num", make_pipeline(*num), NUM),
-        ("cat", OneHotEncoder(**onehot), cat),
-        ("freq", make_pipeline(FrequencyEncoder(), *([StandardScaler()] if scale else [])), FREQ),
-        ("cluster", make_pipeline(KMeansCluster(n_clusters), OneHotEncoder(**onehot)), GEO),
-    ], verbose_feature_names_out=False)
+    blocks = [
+        ("num", make_pipeline(*num), [c for c in NUM if c not in drop]),
+        ("cat", OneHotEncoder(**onehot), [c for c in CAT if c not in drop]),
+    ]
+    freq = [c for c in FREQ if c not in drop]
+    if freq:
+        blocks.append(("freq", make_pipeline(FrequencyEncoder(), *([StandardScaler()] if scale else [])), freq))
+    if not drop & set(GEO):
+        blocks.append(("cluster", make_pipeline(KMeansCluster(n_clusters), OneHotEncoder(**onehot)), GEO))
+    return ColumnTransformer(blocks, verbose_feature_names_out=False)

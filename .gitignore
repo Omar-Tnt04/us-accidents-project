@@ -4,3 +4,6 @@ __pycache__/
 *.pdf
 !reports/midterm_report.pdf
 US_Accidents_March23_sampled_500k.csv
+.venv/
+.vscode/
+.ipynb_checkpoints/
