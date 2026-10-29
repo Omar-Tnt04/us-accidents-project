@@ -32,7 +32,7 @@ This project prepares the [US Accidents (2016–2023)](https://www.kaggle.com/da
 |---|---|---|---|
 | Data understanding | Load the 500K sample and check it matches the full 7.7M dataset | [`01_load_and_sample`](notebooks/01_load_and_sample.ipynb) | `data/sample.parquet` |
 | Pre-processing | Leakage audit (11 columns removed), types, duplicates, missing values, outliers, category clean-up | [`02_cleaning`](notebooks/02_cleaning.ipynb) | `data/clean.parquet`, [leakage audit](reports/leakage_audit.md), [cleaning log](reports/cleaning_log.md) |
-| EDA | 15 charts, descriptive statistics, RQ1–RQ3 stratified by data provider, Spearman and Cramér's V matrices, 6 hypothesis tests (chi-square, Kruskal-Wallis) with table-size-aware effect sizes and a Bonferroni check | [`03_eda`](notebooks/03_eda.ipynb) | [`reports/figures/`](reports/figures) |
+| EDA | 14 charts, descriptive statistics, RQ1–RQ3 stratified by data provider, Spearman and Cramér's V matrices, 6 hypothesis tests (chi-square, Kruskal-Wallis) with table-size-aware effect sizes and a Bonferroni check | [`03_eda`](notebooks/03_eda.ipynb) | [`reports/figures/`](reports/figures) |
 | Feature engineering | 41 candidate features → 36 selected; encoding and scaling fitted on the training split only; 5 ablation feature sets (A–E) for the modelling phase | [`04_features`](notebooks/04_features.ipynb), [`src/features.py`](src/features.py) | `data/features.parquet`, [data dictionary](reports/data_dictionary.md) |
 
 **Data size:** 500,000 × 46 raw → 495,532 × 36 clean → 495,532 × 37 features (36 inputs + target) → 165 model columns after encoding.
@@ -109,7 +109,7 @@ Then follow the steps above inside WSL.
 
 ## Next steps
 
-- **Train / validation / test:** a 70/15/15 split, plus a time-based check (train on 2016–2021, test on 2022–2023).
+- **Train / validation / test:** the 20% hold-out test split is already fixed in notebook 04; validation data is taken from the training part. Plus a time-based check (train on 2016–2021, test on 2022–2023).
 - **Models:** a dummy baseline, then Logistic Regression, Decision Tree, Random Forest and LightGBM / XGBoost, all using class weights.
 - **Evaluation:** macro F1, recall on Severity 4, balanced accuracy and a confusion matrix.
 - **Provider check:** train the best model with and without `Source`.
